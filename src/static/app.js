@@ -6,7 +6,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function showMessage(text, type) {
     messageDiv.textContent = text;
-    messageDiv.className = type;
+    messageDiv.classList.remove("success", "error");
+    messageDiv.classList.add(type);
     messageDiv.classList.remove("hidden");
 
     // Hide message after 5 seconds
@@ -19,8 +20,34 @@ document.addEventListener("DOMContentLoaded", () => {
   async function fetchActivities() {
     try {
       const response = await fetch("/activities", { cache: "no-store" });
-      const activities = await response.json();
 
+      if (!response.ok) {
+        const contentType = response.headers.get("content-type") || "";
+        let errorMessage = `Failed to load activities (${response.status})`;
+
+        if (contentType.includes("application/json")) {
+          try {
+            const errorBody = await response.json();
+            errorMessage = errorBody.detail || errorBody.message || errorMessage;
+          } catch (parseError) {
+            errorMessage = `Failed to load activities (${response.status})`;
+          }
+        } else {
+          const errorText = await response.text();
+          if (errorText) {
+            errorMessage = errorText;
+          }
+        }
+
+        throw new Error(errorMessage);
+      }
+
+      let activities;
+      try {
+        activities = await response.json();
+      } catch (parseError) {
+        throw new Error("Failed to parse activities response.");
+      }
       // Clear loading message
       activitiesList.innerHTML = "";
       activitySelect.innerHTML = '<option value="">-- Select an activity --</option>';
@@ -31,41 +58,70 @@ document.addEventListener("DOMContentLoaded", () => {
         activityCard.className = "activity-card";
 
         const spotsLeft = details.max_participants - details.participants.length;
-        const participantItems = details.participants
-          .map(
-            (participant) => `
-              <li class="participant-item">
-                <span>${participant}</span>
-                <button
-                  type="button"
-                  class="delete-participant-btn"
-                  aria-label="Remove ${participant} from ${name}"
-                  data-activity="${encodeURIComponent(name)}"
-                  data-email="${encodeURIComponent(participant)}"
-                  title="Unregister participant"
-                >
-                  &times;
-                </button>
-              </li>
-            `
-          )
-          .join("");
 
-        const participantsSection = details.participants.length
-          ? `<ul class="participants-list">${participantItems}</ul>`
-          : '<p class="participants-empty">No participants yet.</p>';
+        const heading = document.createElement("h4");
+        heading.textContent = name;
+        activityCard.appendChild(heading);
 
-        activityCard.innerHTML = `
-          <h4>${name}</h4>
-          <p>${details.description}</p>
-          <p><strong>Schedule:</strong> ${details.schedule}</p>
-          <p><strong>Availability:</strong> ${spotsLeft} spots left</p>
-          <div class="participants-section">
-            <h5>Participants</h5>
-            ${participantsSection}
-          </div>
-        `;
+        const description = document.createElement("p");
+        description.textContent = details.description;
+        activityCard.appendChild(description);
 
+        const schedule = document.createElement("p");
+        const scheduleLabel = document.createElement("strong");
+        scheduleLabel.textContent = "Schedule:";
+        schedule.appendChild(scheduleLabel);
+        schedule.appendChild(document.createTextNode(` ${details.schedule}`));
+        activityCard.appendChild(schedule);
+
+        const availability = document.createElement("p");
+        const availabilityLabel = document.createElement("strong");
+        availabilityLabel.textContent = "Availability:";
+        availability.appendChild(availabilityLabel);
+        availability.appendChild(document.createTextNode(` ${spotsLeft} spots left`));
+        activityCard.appendChild(availability);
+
+        const participantsContainer = document.createElement("div");
+        participantsContainer.className = "participants-section";
+
+        const participantsHeading = document.createElement("h5");
+        participantsHeading.textContent = "Participants";
+        participantsContainer.appendChild(participantsHeading);
+
+        if (details.participants.length) {
+          const participantsList = document.createElement("ul");
+          participantsList.className = "participants-list";
+
+          details.participants.forEach((participant) => {
+            const listItem = document.createElement("li");
+            listItem.className = "participant-item";
+
+            const participantText = document.createElement("span");
+            participantText.textContent = participant;
+            listItem.appendChild(participantText);
+
+            const deleteButton = document.createElement("button");
+            deleteButton.type = "button";
+            deleteButton.className = "delete-participant-btn";
+            deleteButton.setAttribute("aria-label", `Remove ${participant} from ${name}`);
+            deleteButton.setAttribute("data-activity", encodeURIComponent(name));
+            deleteButton.setAttribute("data-email", encodeURIComponent(participant));
+            deleteButton.setAttribute("title", "Unregister participant");
+            deleteButton.textContent = "×";
+
+            listItem.appendChild(deleteButton);
+            participantsList.appendChild(listItem);
+          });
+
+          participantsContainer.appendChild(participantsList);
+        } else {
+          const emptyParticipants = document.createElement("p");
+          emptyParticipants.className = "participants-empty";
+          emptyParticipants.textContent = "No participants yet.";
+          participantsContainer.appendChild(emptyParticipants);
+        }
+
+        activityCard.appendChild(participantsContainer);
         activitiesList.appendChild(activityCard);
 
         // Add option to select dropdown
